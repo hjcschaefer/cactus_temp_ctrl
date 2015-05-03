@@ -55,7 +55,13 @@ End:
 .equ PRESCALE_8 = (1<<CS11)
 .equ PRESCALE_1 = (1<<CS10)
 
-
+; global vars
+.def TEMPL = r0
+.def TEMPH = r1
+.def MINL  = r2
+.def MINH  = r3
+.def MAXL  = r4
+.def MAXH  = r5
 
 
 ; *** 8 BIT LCD INTERFACE -------------------------
@@ -494,8 +500,8 @@ DS1820ReadLoop:   rcall OneWireReadByte
 GetTemperature:     ; initiates temp conversion and stored temperature in
                     ; r1:r0 Note: takes about a full second
                     rcall DS1820ReadRam
-                    lds r0, DS1820Ram
-                    lds r1, DS1820Ram+1
+                    lds TEMPL, DS1820Ram
+                    lds TEMPH, DS1820Ram+1
                     ret
                     
 DisplayTemperature: ; displays full temperature given in r17:r16
@@ -591,12 +597,48 @@ Reset:
                     rcall Timer0Delay1s
 
                     rcall LcdClearScreen
+
+                    ;; initialize min and max
+                    rcall GetTemperature
+                    mov MINL, TEMPL
+                    mov MINH, TEMPH
+                    mov MAXL, TEMPL
+                    mov MAXH, TEMPH
+
 MainLoop:
                     rcall LcdHome
                     rcall GetTemperature
-                    mov r16, r0
-                    mov r17, r1
+                    ; set min and max
+                    cp MINL, TEMPL
+                    cpc MINH, TEMPH
+                    brlt  NoNewMinimum
+                    mov MINL, TEMPL
+                    mov MINH, TEMPH
+
+NoNewMinimum:
+                    cp MAXL, TEMPL
+                    cpc MAXH, TEMPH
+                    brge NoNewMaximum
+                    mov MAXL, TEMPL
+                    mov MAXH, TEMPH
+
+NoNewMaximum:
+                    mov r16, TEMPL
+                    mov r17, TEMPH
                     rcall DisplayTemperature
+
+                    ldi r16, 0x80
+                    rcall LcdSetXY
+                    mov r16, MINL
+                    mov r17, MINH
+                    rcall DisplayTemperature
+
+                    ldi r16, 0x8A
+                    rcall LcdSetXY
+                    mov r16, MAXL
+                    mov r17, MAXH
+                    rcall DisplayTemperature
+
                     rjmp MainLoop
 End:
                     rjmp End
