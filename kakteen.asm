@@ -137,6 +137,7 @@ Delay300Loop:          nop
                     pop r17
                     ret
 
+
 ; ------------------- 8 Bit LCD routines ----------------------------------------
 
 Lcd8BitCommand:     ; write a 8 bit command given in r16
@@ -263,7 +264,11 @@ Div8by8X:           sec
                     rjmp Div8by8Loop
 Div8by8Exit:        ret
 
-u2a:                ; convert unsigned in r17 to 3 bytes in buffer
+u2a:                ; convert unsigned in r16 to 3 bytes in buffer
+                    push r17
+                    mov r17, r16
+                    push r18
+                    push r20
                     ldi XL, LOW(LcdBuffer+3)
                     ldi XH, HIGH(LcdBuffer+3)
                     ldi r18, 10
@@ -279,7 +284,10 @@ u2aNext:            rcall Div8by8
 u2aLeading:         st -X, r16
                     dec r20
                     brne u2aLeading
-u2aDone:            ret
+u2aDone:            pop r20
+                    pop r18
+                    pop r17
+                    ret
 
 ;; 2us delay
 Delay_2us:          ; rcall to call us took 3 cycles
@@ -553,7 +561,7 @@ PositiveTemperature:
                     lsl r17
                     lsl r17
                     lsl r17
-                    add r17, r16               ; argument for u2a is in r17 -> inconsistent?
+                    add r16, r17               ; argument for u2a is in r16
                     rcall u2a                  ; Now we have it in LcdBuffer
                                                ; X is where the result is
                     ldi XL, LOW(LcdBuffer)
