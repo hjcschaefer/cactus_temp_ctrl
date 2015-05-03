@@ -10,6 +10,9 @@ PINS:
 
 - PORTD 8 data lines go to LCD
 - PORTC 0,1,2 are used for LCD control lines
+- PORTB Pin 0 = One Wire Bus
+- PORTB Pin 1 = Pin to switch heater on
+
 
 
 Software:
@@ -31,12 +34,19 @@ Global Vars:
 - r1:r0   current temperature
 - r3:r2   minimal temperature
 - r5:r4   maximal temperature
+- r7:r6   lower threshold temperature
+- r9:r8   upper threshold temperature
+- r11:r10 heater on periods counter
 
 */
 
 .include "m328pdef.inc"
 
 .equ FCPU = 3000000              ; 3 Mhz atmega328
+
+; **** The temperature bounds!! ****** * 16 because of the 0.0625 = 1/16 degree resolution
+.equ LOWER_BOUND = 16*24;
+.equ UPPER_BOUND = 16*27;
 
 /* Each instruction is 1/3 of a us long
 This gives exact 2us long pulses
@@ -62,6 +72,12 @@ End:
 .def MINH  = r3
 .def MAXL  = r4
 .def MAXH  = r5
+.def LOWL  = r6  ; lower bound
+.def LOWH  = r7
+.def HIGHL = r8  ; upper bound
+.def HIGHH = r9
+.def CNTL  = r10 ; heat periods counter
+.def CNTH  = r11
 
 
 ; *** 8 BIT LCD INTERFACE -------------------------
@@ -84,6 +100,11 @@ End:
 .equ ONEWIRE_PORTIN = PINB
 .equ ONEWIRE_DIR    = DDRB
 .equ ONEWIRE_BUS    = 0     ; pin 0
+
+; Control Pin for heater
+.equ HEATER_PORT = PORTB
+.equ HEATER_DIR  = DDRB
+.equ HEATER_PIN  = 1
 
 .cseg ;------------  FLASH ----------------------------------
 .org 0x0000
@@ -566,6 +587,38 @@ NoMinusSign:        ld r16, X+
                     pop r19
                     ret
  
+; ------------  Heater Code -------------------------------------
+HeaterInit:         push r16
+                    eor r16, r16
+                    mov CNTL, r16
+                    mov CNTH, r16
+                    sbi HEATER_DIR, HEATER_PIN
+                    cbi HEATER_PORT, HEATER_PIN   ; low -> heater is off
+                    ; also initialize the bounds
+                    ldi r16, LOW(LOWER_BOUND)
+                    mov LOWL, r16
+                    ldi r16, HIGH(LOWER_BOUND)
+                    mov LOWH, r16
+                    ldi r16, LOW(UPPER_BOUND)
+                    mov HIGHL, r16
+                    ldi r16, HIGH(UPPER_BOUND)
+                    mov HIGHH, r16
+                    pop r16
+                    ret
+
+HeaterOn:           sbi HEATER_PORT, HEATER_PIN
+                    push r16                ; increase number of heater on periods
+                    push r17
+                    ldi r16, 0x01
+                    ldi r17, 0x00
+                    add CNTL, r16
+                    adc CNTH, r17
+                    pop r17
+                    pop r16
+                    ret
+
+HeaterOff:          cbi HEATER_PORT, HEATER_PIN
+                    ret
 
 ; --------------------------- MAIN ------------------------------
 Reset:
@@ -580,6 +633,8 @@ Reset:
                     sei
 
                     rcall OneWireInit
+
+                    rcall HeaterInit
 
                     rcall LcdInit
                     rcall LcdClearScreen
@@ -623,6 +678,29 @@ NoNewMinimum:
                     mov MAXH, TEMPH
 
 NoNewMaximum:
+                    ; Heater Handling
+
+                    sbic HEATER_PORT, HEATER_PIN ; is the heater already on?
+                    rjmp HeaterIsOn
+
+                    cp LOWL, TEMPL               ; do we need to switch the heater on?
+                    cpc LOWH, TEMPH
+                    brlt NoNeedForHeating
+                    rcall HeaterOn
+                    rjmp MainDisplay 
+
+HeaterIsOn:         ; the heater is on, can we switch it off?
+                    cp HIGHL, TEMPL
+                    cpc HIGHH, TEMPH
+                    brge  MainDisplay
+                    ; heater is but temperature is high enough
+                    rcall HeaterOff
+
+
+NoNeedForHeating:   
+
+MainDisplay:
+                    ; *** Display Section
                     mov r16, TEMPL
                     mov r17, TEMPH
                     rcall DisplayTemperature
