@@ -19,6 +19,19 @@ Note about the LCD: it really needs the 2ms delay, especially the clear screen
 command. That did not work at all with anything faster. It would be better to
 program that with checking the busy flag.
 
+
+Use of Register:
+----------------
+
+- r0-15 are global variables
+- r16, r17, r18 pass/return function args, get used all the time
+
+Global Vars:
+------------
+- r1:r0   current temperature
+- r3:r2   minimal temperature
+- r5:r4   maximal temperature
+
 */
 
 .include "m328pdef.inc"
@@ -53,6 +66,11 @@ End:
 .equ LCD_RS       = 0
 .equ LCD_RW       = 1
 .equ LCD_E        = 2
+
+; some Lcd command stuff
+.equ DISPLAY_ON = 0b00000100
+.equ CURSOR_ON  = 0b00000010
+.equ BLINK_ON   = 0b00000001
 
 
 ; *** ONE WIRE -----------------
@@ -90,24 +108,6 @@ Delay300Loop:          nop
                     dec r17
                     brne Delay300Loop
                     pop r17
-                    ret
-
-LongWait:           push r16
-                    push r17
-                    push r18
-                    ldi r18, 0x20
-LW1:                ldi r17, 0xFF
-LW2:                ldi r16, 0xFF
-LW3:                nop
-                    dec r16
-                    brne LW3
-                    dec r17
-                    brne LW2
-                    dec r18
-                    brne LW1
-                    pop r18
-                    pop r17
-                    pop r16
                     ret
 
 ; ------------------- 8 Bit LCD routines ----------------------------------------
@@ -150,7 +150,7 @@ LcdInit:            ; 8 bit lcd init blinking cursor
                     rcall Lcd8BitCommand
 
                     ; now cursor
-                    ldi r16, 0x0f
+                    ldi r16, 0x08 | DISPLAY_ON
                     rcall Lcd8BitCommand
 
                     ; now home
@@ -411,8 +411,7 @@ OneWireGetBit:     ; get a single bit over the one wire iterfacr
                    rcall Delay_2us
                    sbic ONEWIRE_PORTIN, ONEWIRE_BUS ; skip if bit is cleared
                    ori r16, 0x80   ; set bit 7, as the bus is high
-                   rcall Timer0Delay44us
-                   ret
+                   rcall Timer0Delay44us ret
 
 OneWireWriteByte:  ; byte is in r16
                    push r17   ; need a counter
@@ -490,8 +489,77 @@ DS1820ReadLoop:   rcall OneWireReadByte
 
 
       
+; ------------------- TEMPERATURE ROUTINES -----------------------
 
+GetTemperature:     ; initiates temp conversion and stored temperature in
+                    ; r1:r0 Note: takes about a full second
+                    rcall DS1820ReadRam
+                    lds r0, DS1820Ram
+                    lds r1, DS1820Ram+1
+                    ret
+                    
+DisplayTemperature: ; displays full temperature given in r17:r16
+                    ; at current location of Lcd
+                    ; handle negative temp
+                    push r19
+                    ldi r19, 0x00               ; signals positive number
+                    sbrs r17, 7
+                    rjmp PositiveTemperature
+                    ; ok, bit 7 was set -> we have negative temperature
+                    ; take 2 complement and keep in mind that we had a negative number
+                    com r17
+                    neg r16                    ; sets carry
+                    adc r17, r19               ; just add the carry, r19 is zero
+                    ldi r19, 0xFF              ; signal negative number
+PositiveTemperature:
+                    ; at this point we have a positvie 16 bit number in r17:r16
+                    ; and r19 flags with 0xFF if we have < 0 temp
+                    push r16                   ; we are going to ignore the lower nibble, 
+                                               ; i.e fractional part for noe
+                                               ; get rid of fractional part
+                    lsr r16
+                    lsr r16
+                    lsr r16
+                    lsr r16
+                    ; shift MSB right, we do not need the most significant nibble
+                    lsl r17
+                    lsl r17
+                    lsl r17
+                    lsl r17
+                    add r17, r16               ; argument for u2a is in r17 -> inconsistent?
+                    rcall u2a                  ; Now we have it in LcdBuffer
+                                               ; X is where the result is
+                    ldi XL, LOW(LcdBuffer)
+                    ldi XH, HIGH(LcdBuffer)
+                    ldi r16, '+'               ; we put a nice '+' in the front
+                    st X, r16
+                    tst r19
+                    breq NoMinusSign
+                    ldi r16, '-'               ; overwrite the + with -
+                    st X, r16
+NoMinusSign:        ld r16, X+
+                    rcall Lcd8BitData
+                    ld r16, X+
+                    rcall Lcd8BitData
+                    ld r16, X+
+                    rcall Lcd8BitData
 
+                    ; now the fractional part.
+                    pop r16
+                    andi r16, 0x0F            ; wipe out higher nibble
+                    ; each fractional string is  8 bytes long so times 8
+                    lsl r16
+                    lsl r16
+                    lsl r16
+                    ldi ZL, LOW(2*Fractional)
+                    ldi ZH, HIGH(2*Fractional)
+                    add ZL, r16
+                    eor r17, r17
+                    adc ZH, r17
+                    rcall LcdString
+                    pop r19
+                    ret
+ 
 
 ; --------------------------- MAIN ------------------------------
 Reset:
@@ -515,84 +583,21 @@ Reset:
                     ldi ZH, HIGH(2*MsgLcd)
                     ldi ZL, LOW(2*MsgLcd)
                     rcall LcdString
-                    rcall LongWait
+                    rcall Timer0Delay1s
                     rcall LcdClearScreen
                     rcall LcdHome
 
                     rcall DS1820Init
                     rcall Timer0Delay1s
 
-Again:                    rcall DS1820ReadRam
-                    
                     rcall LcdClearScreen
+MainLoop:
                     rcall LcdHome
-
-                    ; *** somebody fucked around with r18, who?
-                    ldi r18, 0x00           ; use r0 to flag negative values
-                    mov r0, r18
-                    lds r16, DS1820Ram      ; lsb of temp
-                    lds r17, DS1820Ram+1    ; msb of temp
-                    ; handle negative temp
-                    sbrs r17, 7
-                    rjmp PositiveTemperature
-
-                    ; ok, bit 7 was set -> we have negative temperature
-                    ; take 2 complement and keep in mind that we had a negative number
-                    com r17
-                    neg r16  ; set carry
-                    adc r17, r18   ; r18 should be zero, so we just add the carry?
-                    ldi r18, 0xFF
-                    mov r0, r18
-
-PositiveTemperature:  ; at this point we have a positvie 16 bit number in r17:r16
-                    ; and r18 flags with 0xFF if we have < 0 temp
-                    push r16        ; we are going to ignore the lower nibble, i.e fractional part for noe
-                                    ; get rid of fractional part
-                    lsr r16
-                    lsr r16
-                    lsr r16
-                    lsr r16
-                    ; shift right, we do not need the most significant nibble
-                    lsl r17
-                    lsl r17
-                    lsl r17
-                    lsl r17
-                    add r17, r16  ; argument for u2a is in r17 -> inconsistent?
-                    rcall u2a  ; Now we have it in LcdBuffer
-                    ; this is where the result is
-                    ldi XL, LOW(LcdBuffer)
-                    ldi XH, HIGH(LcdBuffer)
-                    ;; we put a nice '+' in the front
-                    ldi r16, '+'
-                    st X, r16
-                    tst r0
-                    breq NoMinusSign
-                    ; overwrite the + with -
-                    ldi r16, '-'
-                    st X, r16
-NoMinusSign:        ld r16, X+
-                    rcall Lcd8BitData
-                    ld r16, X+
-                    rcall Lcd8BitData
-                    ld r16, X+
-                    rcall Lcd8BitData
-
-                    ; now the fractional part.
-                    pop r16
-                    andi r16, 0x0F    ;; wipe out higher nibble
-                    ; each fractional string is  8 bytes long so times 8
-                    lsl r16
-                    lsl r16
-                    lsl r16
-                    ldi ZL, LOW(2*Fractional)
-                    ldi ZH, HIGH(2*Fractional)
-                    add ZL, r16
-                    eor r17, r17
-                    adc ZH, r17
-                    rcall LcdString
-                    rjmp Again
-                    
-
+                    rcall GetTemperature
+                    mov r16, r0
+                    mov r17, r1
+                    rcall DisplayTemperature
+                    rjmp MainLoop
 End:
                     rjmp End
  
