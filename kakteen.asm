@@ -52,7 +52,7 @@ Global Vars:
 This gives exact 2us long pulses
 End:
                     NOP      ; 1 cycle 
-                    NOP      ; 1 
+                    NOP      ; 1  ; if the carry is set, we are below zero, also if we have identical zero
                     COM r16  ; 1 
                     out PORTB, r16  ; 1
                     rjmp End  ; 2 -> overall 6 cycles, = 2us
@@ -187,13 +187,21 @@ LcdInit:            ; 8 bit lcd init blinking cursor
                     ret
 
 
-LcdString:          ; put out string in flash, pointed to by ZH/ZL 
+LcdFlashString:     ; put out string in flash, pointed to by ZH/ZL 
                     lpm r16, Z+
+                    cpi r16, 0
+                    breq LcdFlashStringExit
+                    rcall Lcd8BitData
+                    rjmp LcdFlashString
+LcdFlashStringExit: ret
+
+LcdString:          ; put out string in memory, pointed to by ZH/ZL 
+                    ld r16, Z+
                     cpi r16, 0
                     breq LcdStringExit
                     rcall Lcd8BitData
                     rjmp LcdString
-LcdStringExit:      ret
+LcdStringExit: ret
 
 LcdSetXY:           ; r16: bit 7 = 1-> line 1, bit 7 = 0 -> line 0
                     ; the rest is column
@@ -289,6 +297,56 @@ u2aDone:            pop r20
                     pop r17
                     ret
 
+; ------------  16 bit conversion --------------------------------
+
+Unsigned16Bit2Ascii: ; convert r17:16 to Ascii and store in LcdBuffer
+                    push ZL
+                    push ZH
+                    push XL
+                    push XH
+                    push r18
+                    push r19
+                    push r20
+                    push r21
+                    ldi ZL, LOW(Power10)
+                    ldi ZH, HIGH(Power10)
+                    ldi XL, LOW(LcdBuffer)
+                    ldi XH, HIGH(LcdBuffer)
+				
+				    ldi r18, 5  ; 5 digits
+U16ToAL2:
+				    ld r19, Z+   ; power 10 in r20:r19
+				    ld r20, Z+
+				    ldi r21, 0xFF  ; our counter
+U16ToAL1:           inc r21
+                    sub r16, r19
+			    	sbc r17, r20
+	     			brcc U16ToAL1
+	     			ori r21, '0'
+		    		st X+, r21
+		    		; add the factoor back in!
+		    		add r16, r19
+		    		adc r17, r20
+				    dec r18
+			    	brne  U16ToAL2
+                    ; add zero termination for string
+                    ldi r21, 0x00
+                    st X+, r21
+
+                    pop r21
+                    pop r20
+                    pop r19
+                    pop r18
+                    pop XH
+                    pop XL
+                    pop ZH
+                    pop ZL
+                    ret
+
+
+	
+
+; ============== DELAYS ==========================================
 ;; 2us delay
 Delay_2us:          ; rcall to call us took 3 cycles
                     ; we need to spend 6 cycles at 3Mhz, so
@@ -478,11 +536,11 @@ DS1820Init:         ; --------- INIT DS18B20 : check it is there
                     breq  DS1820NotFound
                     ldi ZH, HIGH(2*DS1820OK)
                     ldi ZL, LOW(2*DS1820OK)
-                    rcall LcdString
+                    rcall LcdFlashString
                     ret
 DS1820NotFound:     ldi ZH, HIGH(2*Error)
                     ldi ZL, LOW(2*Error)
-                    rcall LcdString
+                    rcall LcdFlashString
                     rjmp End   ; finito
 
 
@@ -591,7 +649,7 @@ NoMinusSign:        ld r16, X+
                     add ZL, r16
                     eor r17, r17
                     adc ZH, r17
-                    rcall LcdString
+                    rcall LcdFlashString
                     pop r19
                     ret
  
@@ -636,6 +694,30 @@ Reset:
                     ldi r16, HIGH(RAMEND)
                     out SPH, r16
 
+                    ; set up powers of 10 in ram, used in unsigned -> ascii conversion
+                    ldi ZL, LOW(Power10)
+                    ldi ZH, HIGH(Power10)
+                    ldi r16, LOW(10000)
+                    st Z+, r16
+                    ldi r16, HIGH(10000)
+                    st Z+, r16
+                    ldi r16, LOW(1000)
+                    st Z+, r16
+                    ldi r16, HIGH(1000)
+                    st Z+, r16
+                    ldi r16, LOW(100)
+                    st Z+, r16
+                    ldi r16, HIGH(100)
+                    st Z+, r16
+                    ldi r16, LOW(10)
+                    st Z+, r16
+                    ldi r16, HIGH(10)
+                    st Z+, r16
+                    ldi r16, LOW(1)
+                    st Z+, r16
+                    ldi r16, HIGH(1)
+                    st Z+, r16
+
                     cli
                     rcall Timer0Init
                     sei
@@ -651,7 +733,7 @@ Reset:
                     ; only for show
                     ldi ZH, HIGH(2*MsgLcd)
                     ldi ZL, LOW(2*MsgLcd)
-                    rcall LcdString
+                    rcall LcdFlashString
                     rcall Timer0Delay1s
                     rcall LcdClearScreen
                     rcall LcdHome
@@ -725,6 +807,14 @@ MainDisplay:
                     mov r17, MAXH
                     rcall DisplayTemperature
 
+                    ldi r16, 0xA
+                    rcall LcdSetXY
+                    mov r16, CNTL
+                    mov r17, CNTH
+                    rcall Unsigned16Bit2Ascii
+                    ldi ZL, LOW(LcdBuffer)
+                    ldi ZH, HIGH(LcdBuffer)
+                    rcall LcdString
                     rjmp MainLoop
 End:
                     rjmp End
@@ -752,11 +842,11 @@ Fractional:        .db ".0000", 0, 0, 0  ; padding to 8 for easier addressing
                    .db ".9375", 0, 0, 0
                    .db 0, 0, 0
 
-
 .dseg ;------------  RAM  -------------------------------------
 
 .org SRAM_START
 DS1820Ram: .byte 10
 LcdBuffer: .byte 10  ; used for LCD output
+Power10: .byte 10
 
 
