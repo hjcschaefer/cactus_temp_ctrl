@@ -113,10 +113,42 @@ End:
 
 
 
-
+;; ------------- INTERRUPT HANDLERS ------------------------
 Timer0Overflow:     ; signal via r18
                     ldi r18, 0xFF
                     reti
+
+;; ------------ WATCHDOG  ----------------------------------
+WatchdogOff:        ;switches watchdog off
+                    push r16
+                    cli
+                    wdr
+                    in r16, MCUSR  ; WDRF 
+                    ; WDRF is set if watchdog occurs unclear why we need to clear it
+                    ; but this code is copied from data sheet
+                    andi r16, (0xff & (0<<WDRF))  ; set watchdog reset flag to zero
+                    out MCUSR, r16
+                    lds r16, WDTCSR
+                    ori r16, (1<<WDCE) | (1<<WDE)  ; enter configuration mode
+                    sts WDTCSR, r16
+                    ldi r16, (0<<WDE)  ; clear WDE (and everything else also)
+                    sts WDTCSR, r16
+                    sei
+                    pop r16
+                    ret
+
+Watchdog8sOn:       ; switch on watchdog with 8s interval
+                    push r16
+                    cli
+                    wdr
+                    lds r16, WDTCSR
+                    ori r16, (1<<WDCE) | (1<<WDE)  ; enter configuration mode
+                    sts WDTCSR, r16
+                    ldi r16, (1<<WDE) | (1<<WDP3) | (1<<WDP0); 8 second interval
+                    sts WDTCSR, r16
+                    sei
+                    pop r16
+                    ret
 
 ; ------------------ DELAY SUBS ------------------------------
 ; *** we really need 2ms delays!
@@ -717,10 +749,13 @@ Reset:
                     st Z+, r16
                     ldi r16, HIGH(1)
                     st Z+, r16
+                    rcall WatchdogOff
+                    rcall Watchdog8sOn
 
                     cli
                     rcall Timer0Init
                     sei
+
 
                     rcall OneWireInit
 
@@ -751,8 +786,10 @@ Reset:
                     mov MAXH, TEMPH
 
 MainLoop:
+                    wdr
                     rcall LcdHome
                     rcall GetTemperature
+                    wdr
                     ; set min and max
                     cp MINL, TEMPL
                     cpc MINH, TEMPH
@@ -790,6 +827,7 @@ HeaterIsOn:         ; the heater is on, can we switch it off?
 NoNeedForHeating:
 
 MainDisplay:
+                    wdr
                     ; *** Display Section
                     mov r16, TEMPL
                     mov r17, TEMPH
@@ -801,7 +839,7 @@ MainDisplay:
                     mov r17, MINH
                     rcall DisplayTemperature
 
-                    ldi r16, 0x8A
+                    ldi r16, 0x88
                     rcall LcdSetXY
                     mov r16, MAXL
                     mov r17, MAXH
