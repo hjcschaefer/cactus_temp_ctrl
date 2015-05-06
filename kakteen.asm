@@ -10,6 +10,7 @@ PINS:
 
 - PORTD 8 data lines go to LCD
 - PORTC 0,1,2 are used for LCD control lines
+- PORTC 3 used for alarm led, which is on if heater is on
 - PORTB Pin 0 = One Wire Bus
 - PORTB Pin 1 = Pin to switch heater on
 
@@ -105,6 +106,10 @@ End:
 .equ HEATER_PORT = PORTB
 .equ HEATER_DIR  = DDRB
 .equ HEATER_PIN  = 1
+; Alarm pin for led
+.equ ALARM_PORT = PORTC
+.equ ALARM_DIR = DDRC
+.equ ALARM_PIN = 3
 
 .cseg ;------------  FLASH ----------------------------------
 .org 0x0000
@@ -692,6 +697,8 @@ HeaterInit:         push r16
                     mov CNTH, r16
                     sbi HEATER_DIR, HEATER_PIN
                     cbi HEATER_PORT, HEATER_PIN   ; low -> heater is off
+                    sbi ALARM_DIR, ALARM_PIN
+                    cbi ALARM_PORT, ALARM_PIN
                     ; also initialize the bounds
                     ldi r16, LOW(LOWER_BOUND)
                     mov LOWL, r16
@@ -705,6 +712,7 @@ HeaterInit:         push r16
                     ret
 
 HeaterOn:           sbi HEATER_PORT, HEATER_PIN
+                    sbi ALARM_PORT, ALARM_PIN
                     push r16                ; increase number of heater on periods
                     push r17
                     ldi r16, 0x01
@@ -716,6 +724,7 @@ HeaterOn:           sbi HEATER_PORT, HEATER_PIN
                     ret
 
 HeaterOff:          cbi HEATER_PORT, HEATER_PIN
+                    cbi ALARM_PORT, ALARM_PIN
                     ret
 
 ; --------------------------- MAIN ------------------------------
