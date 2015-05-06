@@ -2,7 +2,7 @@
 
 Kakteen"uberwachung
 
-Hardware: 
+Hardware:
 - Atmega328p 3Mhz (does not really matter)
 - HD44780 compatible LCD display, 16x2
 
@@ -51,13 +51,13 @@ Global Vars:
 /* Each instruction is 1/3 of a us long
 This gives exact 2us long pulses
 End:
-                    NOP      ; 1 cycle 
+                    NOP      ; 1 cycle
                     NOP      ; 1  ; if the carry is set, we are below zero, also if we have identical zero
-                    COM r16  ; 1 
+                    COM r16  ; 1
                     out PORTB, r16  ; 1
                     rjmp End  ; 2 -> overall 6 cycles, = 2us
 */
- 
+
 ; prescalers
 .equ PRESCALE_1024 = (1<<CS12) | (1<<CS10)
 .equ PRESCALE_256 = (1<<CS12)
@@ -130,7 +130,7 @@ DelayLoop:          rcall Delay300ms
 
 ; --------  300 ms delay
 Delay300ms:         push r17
-                    ldi r17, 0xFF  ; 
+                    ldi r17, 0xFF  ;
 Delay300Loop:          nop
                     dec r17
                     brne Delay300Loop
@@ -187,7 +187,7 @@ LcdInit:            ; 8 bit lcd init blinking cursor
                     ret
 
 
-LcdFlashString:     ; put out string in flash, pointed to by ZH/ZL 
+LcdFlashString:     ; put out string in flash, pointed to by ZH/ZL
                     lpm r16, Z+
                     cpi r16, 0
                     breq LcdFlashStringExit
@@ -195,7 +195,7 @@ LcdFlashString:     ; put out string in flash, pointed to by ZH/ZL
                     rjmp LcdFlashString
 LcdFlashStringExit: ret
 
-LcdString:          ; put out string in memory, pointed to by ZH/ZL 
+LcdString:          ; put out string in memory, pointed to by ZH/ZL
                     ld r16, Z+
                     cpi r16, 0
                     breq LcdStringExit
@@ -245,7 +245,7 @@ LcdBinaryOutNext:   pop r16
                     rcall Lcd8BitData
                     rjmp LcdBinaryOutX
 LcdBinOutZero:      lsl r16
-                    push r16 
+                    push r16
                     ldi r16, '0'
                     rcall Lcd8BitData
 LcdBinaryOutX:      dec r17
@@ -312,7 +312,7 @@ Unsigned16Bit2Ascii: ; convert r17:16 to Ascii and store in LcdBuffer
                     ldi ZH, HIGH(Power10)
                     ldi XL, LOW(LcdBuffer)
                     ldi XH, HIGH(LcdBuffer)
-				
+
 				    ldi r18, 5  ; 5 digits
 U16ToAL2:
 				    ld r19, Z+   ; power 10 in r20:r19
@@ -344,7 +344,7 @@ U16ToAL1:           inc r21
                     ret
 
 
-	
+
 
 ; ============== DELAYS ==========================================
 ;; 2us delay
@@ -363,7 +363,7 @@ Timer0Init:         ; initialize timer0 and set it to zero
                     sei
                     ret
 
-; generic delay routine 
+; generic delay routine
 ; r16 : counter to start from
 ; r17 : prescaler  setting, i.e.
 Timer0Delay:        push r18
@@ -394,7 +394,7 @@ Timer0Delay500us:   push r16
                     pop r17
                     pop r16
                     ret
-                    
+
 Timer0Delay100us:   push r16
                     push r17
                     ldi r16, 218  ; -> count 37 times
@@ -432,7 +432,7 @@ Timer0Delay100ms:   push r16
                     ret
 
 Timer0Delay1s:      push r18
-                    ldi r18, 10 
+                    ldi r18, 10
 Timer0Delay1sLoop:  rcall Timer0Delay100ms
                     dec r18
                     brne Timer0Delay1sLoop
@@ -449,7 +449,7 @@ OneWireInit:        ; set bus to output and high
 OneWireReset:       ; reset bus and see if something is ther
                     ; r16 flags if we found something
                     ; r16 must be 0xFF if we found it
-                    ldi r16, 0x00  ; if 
+                    ldi r16, 0x00  ; if
                     sbi ONEWIRE_DIR, ONEWIRE_BUS ; to output
                     cbi ONEWIRE_PORT, ONEWIRE_BUS ; pull low
                     rcall Timer0Delay500us  ; wait 500 us
@@ -561,13 +561,13 @@ DS1820ReadRam:    ; read all the ram and store it in DS1820Ram
                   rcall OneWireWriteByte
                   ; wait 1 second!
                   rcall Timer0Delay1s
-                  
+
                   rcall OneWireReset
                   ldi r16, 0xCC  ; skip identification
                   rcall OneWireWriteByte
                   ldi r16, 0xBE  ; read ram
                   rcall OneWireWriteByte
-                  
+
                   ldi r17, 9;
 DS1820ReadLoop:   rcall OneWireReadByte
                   st Z+, r16
@@ -581,7 +581,7 @@ DS1820ReadLoop:   rcall OneWireReadByte
                   ret
 
 
-      
+
 ; ------------------- TEMPERATURE ROUTINES -----------------------
 
 GetTemperature:     ; initiates temp conversion and stored temperature in
@@ -590,7 +590,7 @@ GetTemperature:     ; initiates temp conversion and stored temperature in
                     lds TEMPL, DS1820Ram
                     lds TEMPH, DS1820Ram+1
                     ret
-                    
+
 DisplayTemperature: ; displays full temperature given in r17:r16
                     ; at current location of Lcd
                     ; handle negative temp
@@ -607,7 +607,7 @@ DisplayTemperature: ; displays full temperature given in r17:r16
 PositiveTemperature:
                     ; at this point we have a positvie 16 bit number in r17:r16
                     ; and r19 flags with 0xFF if we have < 0 temp
-                    push r16                   ; we are going to ignore the lower nibble, 
+                    push r16                   ; we are going to ignore the lower nibble,
                                                ; i.e fractional part for noe
                                                ; get rid of fractional part
                     lsr r16
@@ -652,7 +652,7 @@ NoMinusSign:        ld r16, X+
                     rcall LcdFlashString
                     pop r19
                     ret
- 
+
 ; ------------  Heater Code -------------------------------------
 HeaterInit:         push r16
                     eor r16, r16
@@ -777,7 +777,7 @@ NoNewMaximum:
                     cpc LOWH, TEMPH
                     brlt NoNeedForHeating
                     rcall HeaterOn
-                    rjmp MainDisplay 
+                    rjmp MainDisplay
 
 HeaterIsOn:         ; the heater is on, can we switch it off?
                     cp HIGHL, TEMPL
@@ -787,7 +787,7 @@ HeaterIsOn:         ; the heater is on, can we switch it off?
                     rcall HeaterOff
 
 
-NoNeedForHeating:   
+NoNeedForHeating:
 
 MainDisplay:
                     ; *** Display Section
@@ -818,12 +818,12 @@ MainDisplay:
                     rjmp MainLoop
 End:
                     rjmp End
- 
+
 
 ;                      "0123456789012345"  ; maximal row length indicator
 MsgLcd:            .db "Starting....", 0, 0, 0
-DS1820OK:          .db "Found DS1820", 0, 0 
-Error:             .db "DS1820 Dead?!", 0, 0 
+DS1820OK:          .db "Found DS1820", 0, 0
+Error:             .db "DS1820 Dead?!", 0, 0
 Fractional:        .db ".0000", 0, 0, 0  ; padding to 8 for easier addressing
                    .db ".0625", 0, 0, 0
                    .db ".1250", 0, 0, 0
