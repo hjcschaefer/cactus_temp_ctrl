@@ -46,8 +46,8 @@ Global Vars:
 .equ FCPU = 3000000              ; 3 Mhz atmega328
 
 ; **** The temperature bounds!! ****** * 16 because of the 0.0625 = 1/16 degree resolution
-.equ LOWER_BOUND = 16*24;
-.equ UPPER_BOUND = 16*27;
+.equ LOWER_BOUND = 16*5;
+.equ UPPER_BOUND = 16*7;
 
 /* Each instruction is 1/3 of a us long
 This gives exact 2us long pulses
@@ -157,6 +157,7 @@ Watchdog8sOn:       ; switch on watchdog with 8s interval
 
 ; ------------------ DELAY SUBS ------------------------------
 ; *** we really need 2ms delays!
+; TODO do this via Timer0 as well
 Delay2ms:           push r16
                     ldi r16, 6
 DelayLoop:          rcall Delay300ms
